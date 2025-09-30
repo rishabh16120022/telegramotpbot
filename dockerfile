@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+ FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
@@ -22,12 +22,5 @@ RUN useradd -m -r botuser && \
     chown -R botuser:botuser /app
 USER botuser
 
-# Expose port (Render uses port 10000 by default for free tier)
-EXPOSE 10000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:10000/health', timeout=2)" || exit 1
-
-# Start the bot
+# Start the bot directly
 CMD ["python", "bot.py"]
