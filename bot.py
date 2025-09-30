@@ -1,14 +1,12 @@
 import logging
 import sqlite3
 import asyncio
-import os
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import random
+from telegram import Update
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler, 
     filters, ContextTypes, ConversationHandler
 )
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import threading
 
 # Import your modules
 import config
@@ -25,36 +23,6 @@ logger = logging.getLogger(__name__)
 # Conversation states
 AWAITING_ADMIN_ID, AWAITING_ACCOUNTS, AWAITING_BROADCAST, AWAITING_UTR = range(4)
 
-# Health check server for Render
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == '/health':
-            try:
-                # Test database connection
-                conn = sqlite3.connect(config.DB_PATH)
-                conn.close()
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(b'OK')
-            except Exception as e:
-                self.send_response(500)
-                self.end_headers()
-                self.wfile.write(str(e).encode())
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-def run_health_server():
-    port = config.PORT
-    server = HTTPServer(('0.0.0.0', port), HealthHandler)
-    logger.info(f"Health check server running on port {port}")
-    server.serve_forever()
-
-# Start health server in background thread
-if os.environ.get('RENDER', False):
-    health_thread = threading.Thread(target=run_health_server, daemon=True)
-    health_thread.start()
-
 # Authentication functions
 def is_owner(user_id: int) -> bool:
     return user_id == config.OWNER_ID
@@ -67,7 +35,7 @@ def is_admin(user_id: int) -> bool:
     user = db.get_user(user_id)
     return user and user[6]  # is_admin field
 
-# Start command handler
+# ========== COMMAND HANDLERS ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     username = update.effective_user.username or "Unknown"
@@ -104,7 +72,6 @@ Use the buttons below to get started! 🚀
         parse_mode='Markdown'
     )
 
-# Help command handler
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = """
 🆘 *Help Menu* 🆘
@@ -125,12 +92,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 *Minimum Deposit:* ₹50
 
-*Support:* Contact @owner_username for assistance
+*Support:* Contact admin for assistance
     """
     
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
-# Stats command handler
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user = db.get_user(user_id)
@@ -150,7 +116,6 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ User not found!")
 
-# Balance command handler
 async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user = db.get_user(user_id)
@@ -165,7 +130,7 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ User not found!")
 
-# Main button handler
+# ========== BUTTON HANDLER ==========
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -239,11 +204,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await show_pending_payments(query)
             else:
                 await query.edit_message_text("❌ Admin access required!")
-        elif data.startswith("approve_payment_") or data.startswith("decline_payment_"):
-            if is_admin(user_id):
-                await handle_payment_approval(query, data, user_id)
-            else:
-                await query.edit_message_text("❌ Admin access required!")
         
         # Admin management
         elif data.startswith("remove_admin_confirm_"):
@@ -280,7 +240,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in button handler: {e}")
         await query.edit_message_text("❌ An error occurred. Please try again.")
 
-# Menu display functions
+# ========== MENU DISPLAY FUNCTIONS ==========
 async def show_main_menu(query):
     accounts_count = db.get_available_accounts_count()
     telegram_count = accounts_count.get('telegram', 0)
@@ -330,7 +290,7 @@ async def show_deposit_menu(query):
 
 Click the button below to see QR code for payment.
 
-*After payment, send the UTR number to @owner_username for verification.*
+*After payment, send the UTR number to admin for verification.*
     """
     await query.edit_message_text(menu_text, reply_markup=deposit_menu(), parse_mode='Markdown')
 
@@ -348,7 +308,26 @@ async def show_user_stats(query, user_id):
         """
         await query.edit_message_text(stats_text, reply_markup=back_to_main(), parse_mode='Markdown')
 
-# Purchase handling with refund system
+async def show_qr_code(query):
+    qr_text = f"""
+📱 *Payment QR Code*
+
+💰 *Minimum Amount:* ₹{config.MIN_DEPOSIT}
+
+Scan the QR code below and make payment:
+
+{config.OWNER_QR_CODE}
+
+*After payment:*
+1. Take screenshot of payment
+2. Send UTR number to admin
+3. Wait for approval
+
+Your funds will be added within 15 minutes after verification.
+    """
+    await query.edit_message_text(qr_text, reply_markup=back_to_main(), parse_mode='Markdown')
+
+# ========== PURCHASE SYSTEM ==========
 async def handle_purchase(query, data, user_id, context: ContextTypes.DEFAULT_TYPE):
     user = db.get_user(user_id)
     
@@ -415,7 +394,6 @@ This may take 10-30 seconds.
 
 async def process_otp_delivery(context: ContextTypes.DEFAULT_TYPE, order_id: int, account_id: int, user_id: int):
     """Process OTP delivery with refund system"""
-    import random
     await asyncio.sleep(random.randint(5, 15))  # Simulate OTP delivery
     
     order = db.get_order(order_id)
@@ -505,7 +483,7 @@ You can try purchasing another account.
     
     await query.edit_message_text(cancel_text, parse_mode='Markdown', reply_markup=back_to_main())
 
-# Owner panel functions
+# ========== OWNER PANEL FUNCTIONS ==========
 async def show_owner_panel(query):
     owner_text = """
 👑 *Owner Panel*
@@ -535,7 +513,7 @@ Choose an action:
     """
     await query.edit_message_text(menu_text, reply_markup=owner_account_management(), parse_mode='Markdown')
 
-# Admin management functions
+# ========== ADMIN MANAGEMENT ==========
 async def manage_admins(query):
     menu_text = """
 🛡️ *Admin Management*
@@ -680,7 +658,7 @@ Admin privileges have been revoked.
     except Exception as e:
         logger.error(f"Failed to notify removed admin {admin_id}: {e}")
 
-# Account management functions
+# ========== ACCOUNT MANAGEMENT ==========
 async def add_accounts(query, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     account_type = "telegram" if "telegram" in data else "whatsapp"
@@ -778,14 +756,13 @@ async def view_all_accounts(query):
     
     await query.edit_message_text(count_text, parse_mode='Markdown', reply_markup=owner_account_management())
 
-# User management
+# ========== USER MANAGEMENT ==========
 async def manage_users(query):
     menu_text = """
 👥 *User Management*
 
 Choose an action:
 • *All Users* - View and manage all users
-• *Blocked Users* - View and unblock users
 
 Use the buttons below to manage users.
     """
@@ -809,7 +786,7 @@ async def list_all_users(query, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(users_text, parse_mode='Markdown', reply_markup=manage_users_menu())
 
-# Broadcast function
+# ========== BROADCAST SYSTEM ==========
 async def start_broadcast(query, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['awaiting_broadcast'] = True
     instruction_text = """
@@ -867,7 +844,7 @@ async def handle_broadcast_message(update: Update, context: ContextTypes.DEFAULT
     await update.message.reply_text(result_text, parse_mode='Markdown', reply_markup=owner_panel())
     return ConversationHandler.END
 
-# Order history
+# ========== ORDER HISTORY ==========
 async def view_user_orders(query, user_id):
     orders = db.get_user_orders(user_id)
     if not orders:
@@ -888,7 +865,7 @@ async def view_user_orders(query, user_id):
     
     await query.edit_message_text(orders_text, parse_mode='Markdown', reply_markup=back_to_main())
 
-# Payment approval system (placeholder implementations)
+# ========== PAYMENT SYSTEM ==========
 async def show_pending_payments(query):
     pending_text = """
 ⏳ *Pending Payments*
@@ -897,14 +874,7 @@ No pending payments at the moment.
     """
     await query.edit_message_text(pending_text, reply_markup=back_to_main(), parse_mode='Markdown')
 
-async def handle_payment_approval(query, data, user_id):
-    payment_id = data.split('_')[-1]
-    if data.startswith("approve_payment_"):
-        await query.edit_message_text("✅ Payment approved!", reply_markup=back_to_main())
-    else:
-        await query.edit_message_text("❌ Payment declined!", reply_markup=back_to_main())
-
-# UTR handling
+# ========== UTR HANDLING ==========
 async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     utr = update.message.text
@@ -933,7 +903,7 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=back_to_main()
     )
 
-# Cancel handlers
+# ========== CANCEL HANDLERS ==========
 async def cancel_adding_accounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['adding_accounts'] = False
     context.user_data['account_type'] = None
@@ -950,6 +920,7 @@ async def cancel_admin_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Admin addition cancelled.", reply_markup=manage_admins_menu())
     return ConversationHandler.END
 
+# ========== MAIN FUNCTION ==========
 def main():
     # Create application
     application = Application.builder().token(config.BOT_TOKEN).build()
@@ -1000,7 +971,8 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_utr))
     
     # Start the bot
-    logger.info("Starting bot...")
+    logger.info("Starting Telegram OTP Bot...")
+    print("🤖 Bot is starting...")
     application.run_polling()
 
 if __name__ == '__main__':
