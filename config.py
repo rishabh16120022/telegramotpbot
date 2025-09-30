@@ -9,10 +9,6 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 OWNER_ID = int(os.getenv('OWNER_ID', 0))
 ADMIN_IDS = list(map(int, os.getenv('ADMIN_IDS', '').split(','))) if os.getenv('ADMIN_IDS') else []
 
-# Render-specific configuration
-PORT = int(os.getenv('PORT', 10000))
-RENDER = os.environ.get('RENDER', False)
-
 # Payment Configuration
 MIN_DEPOSIT = int(os.getenv('MIN_DEPOSIT', 50))
 OWNER_QR_CODE = os.getenv('OWNER_QR_CODE', "https://example.com/owner_qr.jpg")
@@ -22,9 +18,9 @@ TELEGRAM_OTP_PRICE = int(os.getenv('TELEGRAM_OTP_PRICE', 10))
 WHATSAPP_OTP_PRICE = int(os.getenv('WHATSAPP_OTP_PRICE', 15))
 SESSION_PRICE = int(os.getenv('SESSION_PRICE', 25))
 
-# Database - Use proper path for Render
+# Database
 DB_NAME = os.getenv('DB_NAME', 'accounts_bot.db')
-DB_PATH = DB_NAME  # Simple path for Render's ephemeral filesystem
+DB_PATH = DB_NAME
 
 def init_database():
     """Initialize database with proper path"""
