@@ -5,6 +5,7 @@ import datetime
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
+import time
 
 import config
 from database import db
@@ -19,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize bot
 bot = telebot.TeleBot(config.BOT_TOKEN)
+
+# Store temporary data
+user_states = {}
 
 # Authentication functions
 def is_owner(user_id: int) -> bool:
@@ -117,6 +121,7 @@ def handle_callback(call):
     data = call.data
     
     try:
+        # Main menu navigation
         if data == "main_menu":
             show_main_menu(call)
         elif data == "buy_otp":
@@ -129,13 +134,95 @@ def handle_callback(call):
             show_user_stats(call, user_id)
         elif data == "my_orders":
             view_user_orders(call, user_id)
-        elif data == "show_qr":
-            show_qr_code(call)
+        
+        # Owner panel functions
         elif data == "owner_panel":
             if is_owner(user_id):
                 show_owner_panel(call)
             else:
                 bot.answer_callback_query(call.id, "❌ Owner access required!")
+        elif data == "manage_admins":
+            if is_owner(user_id):
+                show_manage_admins(call)
+            else:
+                bot.answer_callback_query(call.id, "❌ Owner access required!")
+        elif data == "add_admin":
+            if is_owner(user_id):
+                start_add_admin(call)
+            else:
+                bot.answer_callback_query(call.id, "❌ Owner access required!")
+        elif data == "list_admins":
+            if is_owner(user_id):
+                show_admin_list(call)
+            else:
+                bot.answer_callback_query(call.id, "❌ Owner access required!")
+        elif data.startswith("remove_admin_"):
+            if is_owner(user_id):
+                remove_admin(call)
+            else:
+                bot.answer_callback_query(call.id, "❌ Owner access required!")
+        
+        # Account management
+        elif data == "owner_account_management":
+            if is_owner(user_id):
+                show_account_management(call)
+            else:
+                bot.answer_callback_query(call.id, "❌ Owner access required!")
+        elif data in ["add_telegram_accounts", "add_whatsapp_accounts"]:
+            if is_owner(user_id):
+                start_add_accounts(call)
+            else:
+                bot.answer_callback_query(call.id, "❌ Owner access required!")
+        elif data == "view_all_accounts":
+            if is_owner(user_id):
+                show_all_accounts(call)
+            else:
+                bot.answer_callback_query(call.id, "❌ Owner access required!")
+        
+        # User management
+        elif data == "manage_users":
+            if is_admin(user_id):
+                show_manage_users(call)
+            else:
+                bot.answer_callback_query(call.id, "❌ Admin access required!")
+        elif data == "list_all_users":
+            if is_admin(user_id):
+                show_all_users(call)
+            else:
+                bot.answer_callback_query(call.id, "❌ Admin access required!")
+        elif data.startswith("view_user_"):
+            if is_admin(user_id):
+                show_user_details(call)
+            else:
+                bot.answer_callback_query(call.id, "❌ Admin access required!")
+        elif data.startswith("add_balance_") or data.startswith("deduct_balance_"):
+            if is_admin(user_id):
+                handle_balance_action(call)
+            else:
+                bot.answer_callback_query(call.id, "❌ Admin access required!")
+        elif data.startswith("block_user_"):
+            if is_admin(user_id):
+                block_user(call)
+            else:
+                bot.answer_callback_query(call.id, "❌ Admin access required!")
+        elif data.startswith("unblock_user_"):
+            if is_admin(user_id):
+                unblock_user(call)
+            else:
+                bot.answer_callback_query(call.id, "❌ Admin access required!")
+        
+        # Broadcast
+        elif data == "broadcast":
+            if is_owner(user_id):
+                start_broadcast(call)
+            else:
+                bot.answer_callback_query(call.id, "❌ Owner access required!")
+        
+        # Purchase handling
+        elif data.startswith("buy_"):
+            handle_purchase(call, data, user_id)
+        
+        # Payment approval system
         elif data == "pending_payments":
             if is_admin(user_id):
                 show_pending_payments(call)
@@ -156,8 +243,6 @@ def handle_callback(call):
                 decline_payment(call)
             else:
                 bot.answer_callback_query(call.id, "❌ Admin access required!")
-        elif data.startswith("buy_"):
-            handle_purchase(call, data, user_id)
                 
     except Exception as e:
         logger.error(f"Error in button handler: {e}")
@@ -236,9 +321,206 @@ def show_owner_panel(call):
     bot.edit_message_text("👑 *Owner Panel*", call.message.chat.id, call.message.message_id,
                          reply_markup=owner_panel(), parse_mode='Markdown')
 
+# ========== ADMIN MANAGEMENT FUNCTIONS ==========
+def show_manage_admins(call):
+    bot.edit_message_text("🛡️ *Admin Management*", call.message.chat.id, call.message.message_id,
+                         reply_markup=manage_admins_menu(), parse_mode='Markdown')
+
+def start_add_admin(call):
+    user_states[call.from_user.id] = 'awaiting_admin_id'
+    bot.edit_message_text(
+        "👥 *Add New Admin*\n\nSend the user ID you want to make admin:",
+        call.message.chat.id, call.message.message_id,
+        parse_mode='Markdown',
+        reply_markup=back_to_main()
+    )
+
+def show_admin_list(call):
+    admins = db.get_all_admins()
+    if not admins:
+        bot.edit_message_text("📝 No admins found.", call.message.chat.id, call.message.message_id,
+                             reply_markup=manage_admins_menu())
+        return
+    
+    admin_text = "🛡️ *Current Admins*\n\n"
+    for admin in admins:
+        user_id, username, is_admin = admin
+        status = "👑 Owner" if user_id == config.OWNER_ID else "🛡️ Admin"
+        name = f"@{username}" if username else f"User {user_id}"
+        admin_text += f"• {name} (`{user_id}`) - {status}\n"
+    
+    bot.edit_message_text(admin_text, call.message.chat.id, call.message.message_id,
+                         parse_mode='Markdown', reply_markup=admin_list_menu(admins))
+
+def remove_admin(call):
+    admin_id = int(call.data.split('_')[-1])
+    if admin_id == config.OWNER_ID:
+        bot.answer_callback_query(call.id, "❌ Cannot remove owner!")
+        return
+    
+    db.remove_admin(admin_id)
+    bot.answer_callback_query(call.id, "✅ Admin removed!")
+    show_admin_list(call)
+
+# ========== ACCOUNT MANAGEMENT FUNCTIONS ==========
+def show_account_management(call):
+    accounts_count = db.get_available_accounts_count()
+    menu_text = f"""
+📱 *Account Management*
+
+📊 *Current Inventory:*
+📲 Telegram: {accounts_count.get('telegram', 0)}
+💚 WhatsApp: {accounts_count.get('whatsapp', 0)}
+    """
+    bot.edit_message_text(menu_text, call.message.chat.id, call.message.message_id,
+                         reply_markup=owner_account_management(), parse_mode='Markdown')
+
+def start_add_accounts(call):
+    account_type = "telegram" if "telegram" in call.data else "whatsapp"
+    user_states[call.from_user.id] = f'adding_{account_type}_accounts'
+    
+    instruction_text = f"""
+📝 *Adding {account_type.title()} Accounts*
+
+Send accounts in format:
+`phone_number` or `phone_number:otp`
+
+Examples:
+`+1234567890`
+`+1234567891:123456`
+
+Send /cancel to stop.
+    """
+    bot.edit_message_text(instruction_text, call.message.chat.id, call.message.message_id,
+                         parse_mode='Markdown')
+
+def show_all_accounts(call):
+    accounts_count = db.get_available_accounts_count()
+    menu_text = f"""
+📊 *Account Statistics*
+
+📲 Telegram Available: {accounts_count.get('telegram', 0)}
+💚 WhatsApp Available: {accounts_count.get('whatsapp', 0)}
+    """
+    bot.edit_message_text(menu_text, call.message.chat.id, call.message.message_id,
+                         reply_markup=owner_account_management(), parse_mode='Markdown')
+
+# ========== USER MANAGEMENT FUNCTIONS ==========
+def show_manage_users(call):
+    bot.edit_message_text("👥 *User Management*", call.message.chat.id, call.message.message_id,
+                         reply_markup=manage_users_menu(), parse_mode='Markdown')
+
+def show_all_users(call):
+    users = db.get_all_users()
+    if not users:
+        bot.edit_message_text("📝 No users found.", call.message.chat.id, call.message.message_id,
+                             reply_markup=manage_users_menu())
+        return
+    
+    users_text = "👥 *All Users*\n\n"
+    for user in users[:15]:  # Show first 15 users
+        user_id, username, balance, is_blocked, is_admin, joined_date = user
+        status = "🚫" if is_blocked else "✅"
+        admin_badge = " 🛡️" if is_admin else ""
+        name = f"@{username}" if username else f"User {user_id}"
+        users_text += f"{status} {name}{admin_badge} - ₹{balance}\n"
+    
+    bot.edit_message_text(users_text, call.message.chat.id, call.message.message_id,
+                         parse_mode='Markdown', reply_markup=all_users_menu(users))
+
+def show_user_details(call):
+    user_id = int(call.data.split('_')[-1])
+    user = db.get_user(user_id)
+    
+    if not user:
+        bot.answer_callback_query(call.id, "❌ User not found!")
+        return
+    
+    user_id, username, balance, total_spent, accounts_bought, is_blocked, is_admin, joined_date, total_refund = user
+    status = "🚫 Blocked" if is_blocked else "✅ Active"
+    role = "🛡️ Admin" if is_admin else "👤 User"
+    
+    user_text = f"""
+👤 *User Details*
+
+🆔 User ID: `{user_id}`
+👤 Username: @{username if username else 'N/A'}
+💰 Balance: ₹{balance}
+💳 Total Spent: ₹{total_spent}
+📱 Accounts Bought: {accounts_bought}
+📊 Status: {status}
+🎯 Role: {role}
+📅 Joined: {joined_date}
+    """
+    
+    bot.edit_message_text(user_text, call.message.chat.id, call.message.message_id,
+                         parse_mode='Markdown', reply_markup=user_actions_menu(user_id))
+
+def handle_balance_action(call):
+    data = call.data
+    parts = data.split('_')
+    action = parts[0]  # add or deduct
+    target_user_id = int(parts[2])
+    amount = int(parts[3])
+    
+    target_user = db.get_user(target_user_id)
+    if not target_user:
+        bot.answer_callback_query(call.id, "❌ User not found!")
+        return
+    
+    if action == "add":
+        db.update_balance(target_user_id, amount)
+        action_text = "added to"
+        emoji = "➕"
+    else:  # deduct
+        if target_user[2] < amount:
+            bot.answer_callback_query(call.id, "❌ User has insufficient balance!", show_alert=True)
+            return
+        db.update_balance(target_user_id, -amount)
+        action_text = "deducted from"
+        emoji = "➖"
+    
+    result_text = f"""
+{emoji} *Balance Updated*
+
+💰 Amount: ₹{amount} {action_text} user
+👤 User: {target_user[1] or f'User {target_user_id}'}
+✅ Operation successful
+    """
+    
+    bot.edit_message_text(result_text, call.message.chat.id, call.message.message_id, parse_mode='Markdown')
+    
+    # Notify user
+    try:
+        user_msg = f"💳 Your balance was updated by admin: {emoji} ₹{amount}"
+        bot.send_message(target_user_id, user_msg, parse_mode='Markdown')
+    except:
+        pass
+
+def block_user(call):
+    user_id = int(call.data.split('_')[-1])
+    db.block_user(user_id)
+    bot.answer_callback_query(call.id, "✅ User blocked!")
+    show_user_details(call)
+
+def unblock_user(call):
+    user_id = int(call.data.split('_')[-1])
+    db.unblock_user(user_id)
+    bot.answer_callback_query(call.id, "✅ User unblocked!")
+    show_user_details(call)
+
+# ========== BROADCAST FUNCTION ==========
+def start_broadcast(call):
+    user_states[call.from_user.id] = 'awaiting_broadcast'
+    bot.edit_message_text(
+        "📢 *Broadcast Message*\n\nSend the message you want to broadcast to all users:",
+        call.message.chat.id, call.message.message_id,
+        parse_mode='Markdown',
+        reply_markup=back_to_main()
+    )
+
 # ========== PAYMENT APPROVAL SYSTEM ==========
 def show_pending_payments(call):
-    """Show all pending payments to admin/owner"""
     pending_payments = db.get_pending_payments()
     
     if not pending_payments:
@@ -268,7 +550,6 @@ def show_pending_payments(call):
     )
 
 def view_payment_details(call):
-    """Show details of a specific payment"""
     payment_id = int(call.data.split('_')[-1])
     payment = db.get_payment(payment_id)
     
@@ -299,7 +580,6 @@ Choose an action:
     )
 
 def approve_payment(call):
-    """Approve a payment request"""
     payment_id = int(call.data.split('_')[-1])
     payment = db.approve_payment(payment_id, call.from_user.id)
     
@@ -332,7 +612,6 @@ Thank you for your payment! 🎉
         bot.answer_callback_query(call.id, "❌ Payment not found!")
 
 def decline_payment(call):
-    """Decline a payment request"""
     payment_id = int(call.data.split('_')[-1])
     payment = db.get_payment(payment_id)
     
@@ -430,26 +709,103 @@ def view_user_orders(call, user_id):
     bot.edit_message_text(orders_text, call.message.chat.id, call.message.message_id,
                          reply_markup=back_to_main(), parse_mode='Markdown')
 
-# ========== UTR HANDLING ==========
+# ========== MESSAGE HANDLER FOR TEXT INPUT ==========
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
-    if message.text.startswith('/'):
+    user_id = message.from_user.id
+    text = message.text.strip()
+    
+    # Handle commands
+    if text.startswith('/'):
+        if text == '/cancel':
+            if user_id in user_states:
+                del user_states[user_id]
+            bot.send_message(message.chat.id, "❌ Operation cancelled.", reply_markup=main_menu())
         return
     
-    # Assume it's a UTR number
-    utr = message.text.strip()
-    user_id = message.from_user.id
+    # Handle admin ID input
+    if user_states.get(user_id) == 'awaiting_admin_id':
+        if is_owner(user_id):
+            try:
+                new_admin_id = int(text)
+                target_user = db.get_user(new_admin_id)
+                if not target_user:
+                    db.create_user(new_admin_id, "Unknown")
+                
+                db.add_admin(new_admin_id)
+                del user_states[user_id]
+                
+                bot.send_message(message.chat.id, f"✅ Admin added: {new_admin_id}", 
+                               reply_markup=manage_admins_menu())
+                
+                # Notify new admin
+                try:
+                    bot.send_message(new_admin_id, "🎉 You are now an admin!", parse_mode='Markdown')
+                except:
+                    pass
+                    
+            except ValueError:
+                bot.send_message(message.chat.id, "❌ Invalid user ID! Send numbers only.")
+        return
     
-    # Check if message contains amount (format: "UTR123456 500")
-    parts = utr.split()
+    # Handle account addition
+    if user_states.get(user_id, '').startswith('adding_'):
+        account_type = user_states[user_id].replace('adding_', '').replace('_accounts', '')
+        if is_owner(user_id):
+            lines = text.split('\n')
+            added_count = 0
+            
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                try:
+                    if ':' in line:
+                        phone, otp = line.split(':', 1)
+                    else:
+                        phone, otp = line, None
+                    
+                    if phone.startswith('+'):
+                        price = config.TELEGRAM_OTP_PRICE if account_type == "telegram" else config.WHATSAPP_OTP_PRICE
+                        db.add_account(account_type, phone, price, otp)
+                        added_count += 1
+                except:
+                    pass
+            
+            del user_states[user_id]
+            bot.send_message(message.chat.id, f"✅ Added {added_count} {account_type} accounts!",
+                           reply_markup=owner_account_management())
+        return
+    
+    # Handle broadcast
+    if user_states.get(user_id) == 'awaiting_broadcast':
+        if is_owner(user_id):
+            users = db.get_all_users()
+            success_count = 0
+            
+            for user in users:
+                try:
+                    bot.send_message(user[0], f"📢 *Broadcast Message*\n\n{text}", parse_mode='Markdown')
+                    success_count += 1
+                    time.sleep(0.1)  # Rate limiting
+                except:
+                    pass
+            
+            del user_states[user_id]
+            bot.send_message(message.chat.id, f"✅ Broadcast sent to {success_count}/{len(users)} users",
+                           reply_markup=owner_panel())
+        return
+    
+    # Handle UTR payments (default case)
+    parts = text.split()
     if len(parts) >= 2 and parts[-1].isdigit():
         utr_text = ' '.join(parts[:-1])
         amount = int(parts[-1])
     else:
-        utr_text = utr
+        utr_text = text
         amount = config.MIN_DEPOSIT
     
-    # Validate amount
     if amount < config.MIN_DEPOSIT:
         amount = config.MIN_DEPOSIT
     
