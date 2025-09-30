@@ -10,6 +10,17 @@ import time
 import config
 from database import db
 from keyboards import *
+import atexit
+import signal
+
+# Add this at the top to prevent multiple instances
+
+def exit_handler():
+    print("🤖 Bot shutting down...")
+    
+atexit.register(exit_handler)
+signal.signal(signal.SIGINT, exit_handler)
+signal.signal(signal.SIGTERM, exit_handler)
 
 # Configure logging
 logging.basicConfig(
@@ -867,3 +878,4 @@ def start_bot():
 
 if __name__ == '__main__':
     start_bot()
+
