@@ -1,5 +1,4 @@
 import sqlite3
-import datetime
 from typing import List, Tuple, Optional
 import config
 
@@ -149,27 +148,4 @@ class Database:
         conn.close()
         return users
 
-    def block_user(self, user_id: int):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute('UPDATE users SET is_blocked = TRUE WHERE user_id = ?', (user_id,))
-        conn.commit()
-        conn.close()
-
-    def unblock_user(self, user_id: int):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute('UPDATE users SET is_blocked = FALSE WHERE user_id = ?', (user_id,))
-        conn.commit()
-        conn.close()
-
-    def update_user_balance_direct(self, user_id: int, new_balance: float):
-        """Directly set user balance (for admin operations)"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute('UPDATE users SET balance = ? WHERE user_id = ?', (new_balance, user_id))
-        conn.commit()
-        conn.close()
-
-# Initialize database instance
 db = Database()
