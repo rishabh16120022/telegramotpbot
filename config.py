@@ -11,11 +11,11 @@ ADMIN_IDS = list(map(int, os.getenv('ADMIN_IDS', '').split(','))) if os.getenv('
 
 # Payment Configuration
 MIN_DEPOSIT = int(os.getenv('MIN_DEPOSIT', 50))
-OWNER_QR_CODE = os.getenv('OWNER_QR_CODE', "https://via.placeholder.com/200x200/0088cc/ffffff?text=QR+Code")
+OWNER_QR_CODE = os.getenv('OWNER_QR_CODE', "https://ibb.co/jkhs189T")
 
 # Account Prices
-TELEGRAM_OTP_PRICE = int(os.getenv('TELEGRAM_OTP_PRICE', 10))
-WHATSAPP_OTP_PRICE = int(os.getenv('WHATSAPP_OTP_PRICE', 15))
+TELEGRAM_OTP_PRICE = int(os.getenv('TELEGRAM_OTP_PRICE', 90))
+WHATSAPP_OTP_PRICE = int(os.getenv('WHATSAPP_OTP_PRICE', 70))
 SESSION_PRICE = int(os.getenv('SESSION_PRICE', 25))
 
 # Database
@@ -87,3 +87,4 @@ def init_database():
     conn.close()
 
 init_database()
+
