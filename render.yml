@@ -1,5 +1,5 @@
 services:
-  - type: web
+  - type: worker
     name: telegramotpbot
     env: docker
     plan: free
@@ -23,5 +23,4 @@ services:
         value: 25
       - key: OWNER_QR_CODE
         value: "https://via.placeholder.com/200x200/0088cc/ffffff?text=QR+Code"
-    healthCheckPath: /health
     autoDeploy: true
