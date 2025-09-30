@@ -1,26 +1,19 @@
 import logging
 import sqlite3
-import asyncio
 import random
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Updater, CommandHandler, CallbackQueryHandler, MessageHandler, 
-    Filters, CallbackContext, ConversationHandler
-)
+import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 import config
 from database import db
 from keyboards import *
 
 # Configure logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Conversation states
-AWAITING_ADMIN_ID, AWAITING_ACCOUNTS, AWAITING_BROADCAST, AWAITING_UTR = range(4)
+# Initialize bot
+bot = telebot.TeleBot(config.BOT_TOKEN)
 
 # Authentication functions
 def is_owner(user_id: int) -> bool:
@@ -35,9 +28,10 @@ def is_admin(user_id: int) -> bool:
     return user and user[6]
 
 # ========== COMMAND HANDLERS ==========
-def start(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    username = update.effective_user.username or "Unknown"
+@bot.message_handler(commands=['start'])
+def start(message):
+    user_id = message.from_user.id
+    username = message.from_user.username or "Unknown"
     
     db.create_user(user_id, username)
     
@@ -61,9 +55,10 @@ def start(update: Update, context: CallbackContext):
 Use the buttons below to get started! 🚀
     """
     
-    update.message.reply_text(welcome_message, reply_markup=main_menu(), parse_mode='Markdown')
+    bot.send_message(message.chat.id, welcome_message, reply_markup=main_menu(), parse_mode='Markdown')
 
-def help_command(update: Update, context: CallbackContext):
+@bot.message_handler(commands=['help'])
+def help_command(message):
     help_text = """
 🆘 *Help Menu* 🆘
 
@@ -73,12 +68,18 @@ def help_command(update: Update, context: CallbackContext):
 /stats - Your statistics  
 /balance - Check balance
 
+*Features:*
+📱 Buy OTP - Purchase OTP for accounts
+💳 Buy Session - Buy ready sessions  
+💰 Deposit - Add funds to wallet
+
 *Minimum Deposit:* ₹50
     """
-    update.message.reply_text(help_text, parse_mode='Markdown')
+    bot.send_message(message.chat.id, help_text, parse_mode='Markdown')
 
-def stats_command(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
+@bot.message_handler(commands=['stats'])
+def stats_command(message):
+    user_id = message.from_user.id
     user = db.get_user(user_id)
     
     if user:
@@ -90,56 +91,55 @@ def stats_command(update: Update, context: CallbackContext):
 💳 Total Spent: ₹{user[3]}
 📱 Accounts Bought: {user[4]}
         """
-        update.message.reply_text(stats_text, parse_mode='Markdown')
+        bot.send_message(message.chat.id, stats_text, parse_mode='Markdown')
     else:
-        update.message.reply_text("❌ User not found!")
+        bot.send_message(message.chat.id, "❌ User not found!")
 
-def balance_command(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
+@bot.message_handler(commands=['balance', 'mybalance'])
+def balance_command(message):
+    user_id = message.from_user.id
     user = db.get_user(user_id)
     
     if user:
-        update.message.reply_text(f"💳 *Balance:* ₹{user[2]}", parse_mode='Markdown')
+        bot.send_message(message.chat.id, f"💳 *Your Balance:* ₹{user[2]}", parse_mode='Markdown')
     else:
-        update.message.reply_text("❌ User not found!")
+        bot.send_message(message.chat.id, "❌ User not found!")
 
-# ========== BUTTON HANDLER ==========
-def button_handler(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.answer()
-    
-    user_id = query.from_user.id
-    data = query.data
+# ========== BUTTON HANDLERS ==========
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback(call):
+    user_id = call.from_user.id
+    data = call.data
     
     try:
         if data == "main_menu":
-            show_main_menu(query)
+            show_main_menu(call)
         elif data == "buy_otp":
-            show_otp_menu(query)
+            show_otp_menu(call)
         elif data == "buy_session":
-            show_session_menu(query)
+            show_session_menu(call)
         elif data == "deposit":
-            show_deposit_menu(query)
+            show_deposit_menu(call)
         elif data == "stats":
-            show_user_stats(query, user_id)
+            show_user_stats(call, user_id)
         elif data == "my_orders":
-            view_user_orders(query, user_id)
+            view_user_orders(call, user_id)
         elif data == "show_qr":
-            show_qr_code(query)
+            show_qr_code(call)
         elif data == "owner_panel":
             if is_owner(user_id):
-                show_owner_panel(query)
+                show_owner_panel(call)
             else:
-                query.edit_message_text("❌ Owner access required!")
+                bot.answer_callback_query(call.id, "❌ Owner access required!")
         elif data.startswith("buy_"):
-            handle_purchase(query, data, user_id, context)
+            handle_purchase(call, data, user_id)
                 
     except Exception as e:
         logger.error(f"Error in button handler: {e}")
-        query.edit_message_text("❌ An error occurred. Please try again.")
+        bot.answer_callback_query(call.id, "❌ Error occurred!")
 
 # ========== MENU FUNCTIONS ==========
-def show_main_menu(query):
+def show_main_menu(call):
     accounts_count = db.get_available_accounts_count()
     telegram_count = accounts_count.get('telegram', 0)
     whatsapp_count = accounts_count.get('whatsapp', 0)
@@ -151,35 +151,39 @@ def show_main_menu(query):
 📲 Telegram: {telegram_count}
 💚 WhatsApp: {whatsapp_count}
     """
-    query.edit_message_text(menu_text, reply_markup=main_menu(), parse_mode='Markdown')
+    bot.edit_message_text(menu_text, call.message.chat.id, call.message.message_id, 
+                         reply_markup=main_menu(), parse_mode='Markdown')
 
-def show_otp_menu(query):
+def show_otp_menu(call):
     menu_text = """
 📱 *Buy OTP*
 
 • Telegram OTP - ₹10
 • WhatsApp OTP - ₹15
     """
-    query.edit_message_text(menu_text, reply_markup=buy_otp_menu(), parse_mode='Markdown')
+    bot.edit_message_text(menu_text, call.message.chat.id, call.message.message_id,
+                         reply_markup=buy_otp_menu(), parse_mode='Markdown')
 
-def show_session_menu(query):
+def show_session_menu(call):
     menu_text = """
 💳 *Buy Session*
 
 • Telegram Session - ₹25
 • WhatsApp Session - ₹25
     """
-    query.edit_message_text(menu_text, reply_markup=buy_session_menu(), parse_mode='Markdown')
+    bot.edit_message_text(menu_text, call.message.chat.id, call.message.message_id,
+                         reply_markup=buy_session_menu(), parse_mode='Markdown')
 
-def show_deposit_menu(query):
+def show_deposit_menu(call):
     menu_text = f"""
 💰 *Deposit Funds*
 
 💳 *Minimum Deposit:* ₹{config.MIN_DEPOSIT}
     """
-    query.edit_message_text(menu_text, reply_markup=deposit_menu(), parse_mode='Markdown')
+    bot.edit_message_text(menu_text, call.message.chat.id, call.message.message_id,
+                         reply_markup=deposit_menu(), parse_mode='Markdown')
 
-def show_user_stats(query, user_id):
+def show_user_stats(call, user_id):
     user = db.get_user(user_id)
     if user:
         stats_text = f"""
@@ -189,27 +193,30 @@ def show_user_stats(query, user_id):
 💰 Balance: ₹{user[2]}
 📱 Accounts Bought: {user[4]}
         """
-        query.edit_message_text(stats_text, reply_markup=back_to_main(), parse_mode='Markdown')
+        bot.edit_message_text(stats_text, call.message.chat.id, call.message.message_id,
+                             reply_markup=back_to_main(), parse_mode='Markdown')
 
-def show_qr_code(query):
+def show_qr_code(call):
     qr_text = f"""
 📱 *Payment QR Code*
 
 {config.OWNER_QR_CODE}
 
-Send UTR after payment.
+*After payment, send UTR number to admin.*
     """
-    query.edit_message_text(qr_text, reply_markup=back_to_main(), parse_mode='Markdown')
+    bot.edit_message_text(qr_text, call.message.chat.id, call.message.message_id,
+                         reply_markup=back_to_main(), parse_mode='Markdown')
 
-def show_owner_panel(query):
-    query.edit_message_text("👑 *Owner Panel*", reply_markup=owner_panel(), parse_mode='Markdown')
+def show_owner_panel(call):
+    bot.edit_message_text("👑 *Owner Panel*", call.message.chat.id, call.message.message_id,
+                         reply_markup=owner_panel(), parse_mode='Markdown')
 
 # ========== PURCHASE SYSTEM ==========
-def handle_purchase(query, data, user_id, context: CallbackContext):
+def handle_purchase(call, data, user_id):
     user = db.get_user(user_id)
     
     if user and user[5]:
-        query.edit_message_text("❌ Account blocked!", reply_markup=back_to_main())
+        bot.answer_callback_query(call.id, "❌ Account blocked!")
         return
     
     prices = {
@@ -222,81 +229,93 @@ def handle_purchase(query, data, user_id, context: CallbackContext):
     price = prices.get(data, 0)
     
     if user[2] < price:
-        query.edit_message_text(f"❌ Need ₹{price}", reply_markup=back_to_main())
+        bot.answer_callback_query(call.id, f"❌ Need ₹{price}")
         return
     
     account_type = "telegram" if "telegram" in data else "whatsapp"
     account = db.get_available_account(account_type)
     
     if not account:
-        query.edit_message_text("❌ No accounts!", reply_markup=back_to_main())
+        bot.answer_callback_query(call.id, "❌ No accounts available!")
         return
     
-    # Simulate purchase
+    # Process purchase
     db.update_balance(user_id, -price)
+    
+    # Simulate OTP delivery
+    otp_code = str(random.randint(100000, 999999))
+    
     success_text = f"""
 ✅ *Purchase Successful!*
 
-💰 Paid: ₹{price}
 📞 Number: `{account[2]}`
-    """
-    query.edit_message_text(success_text, parse_mode='Markdown', reply_markup=back_to_main())
+🔑 OTP: `{otp_code}`
+💰 Paid: ₹{price}
 
-def view_user_orders(query, user_id):
+Thank you for your purchase! 🎉
+    """
+    
+    bot.edit_message_text(success_text, call.message.chat.id, call.message.message_id,
+                         parse_mode='Markdown')
+    
+    # Mark account as sold
+    db.mark_account_sold(account[0], user_id)
+
+def view_user_orders(call, user_id):
     orders = db.get_user_orders(user_id)
     if not orders:
-        query.edit_message_text("📭 No orders!", reply_markup=back_to_main())
+        bot.edit_message_text("📭 No orders yet!", call.message.chat.id, call.message.message_id,
+                             reply_markup=back_to_main())
         return
     
     orders_text = "📋 *Your Orders:*\n\n"
-    for order in orders[:3]:
-        orders_text += f"• {order[3]} - ₹{order[6]}\n"
+    for order in orders[:5]:
+        status_emoji = {'success': '✅', 'failed': '❌', 'cancelled': '🔄', 'pending': '⏳'}.get(order[5], '❓')
+        orders_text += f"{status_emoji} {order[3]} - ₹{order[6]} - {order[5]}\n"
     
-    query.edit_message_text(orders_text, parse_mode='Markdown', reply_markup=back_to_main())
+    bot.edit_message_text(orders_text, call.message.chat.id, call.message.message_id,
+                         reply_markup=back_to_main(), parse_mode='Markdown')
 
 # ========== UTR HANDLING ==========
-def handle_utr(update: Update, context: CallbackContext):
-    utr = update.message.text
-    user_id = update.effective_user.id
-    
-    if len(utr) < 10:
-        update.message.reply_text("❌ Invalid UTR!")
+@bot.message_handler(func=lambda message: True)
+def handle_all_messages(message):
+    if message.text.startswith('/'):
         return
     
-    message = f"💰 Payment\nUser: {user_id}\nUTR: {utr}"
+    # Assume it's a UTR number
+    utr = message.text.strip()
+    user_id = message.from_user.id
+    
+    if len(utr) < 10 or not utr.isdigit():
+        bot.send_message(message.chat.id, "❌ Invalid UTR format!", reply_markup=back_to_main())
+        return
     
     # Notify admins
+    admin_message = f"""
+💰 *New Payment Request*
+
+👤 User: {user_id} (@{message.from_user.username or 'N/A'})
+🔢 UTR: `{utr}`
+    """
+    
     admins = db.get_all_admins()
     for admin in admins:
         try:
-            context.bot.send_message(admin[0], message)
-        except:
-            pass
+            bot.send_message(admin[0], admin_message, parse_mode='Markdown')
+        except Exception as e:
+            logger.error(f"Failed to notify admin {admin[0]}: {e}")
     
-    update.message.reply_text("✅ UTR received!", reply_markup=back_to_main())
+    bot.send_message(message.chat.id, 
+                    "✅ UTR received! Payment under review. You'll be notified once approved.",
+                    reply_markup=back_to_main())
 
-# ========== MAIN FUNCTION ==========
-def main():
+# ========== START BOT ==========
+def start_bot():
     logger.info("🚀 Starting Telegram Bot...")
-    
-    # Create updater
-    updater = Updater(token=config.BOT_TOKEN, use_context=True)
-    dispatcher = updater.dispatcher
-    
-    # Add handlers
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("help", help_command))
-    dispatcher.add_handler(CommandHandler("stats", stats_command))
-    dispatcher.add_handler(CommandHandler("balance", balance_command))
-    dispatcher.add_handler(CommandHandler("mybalance", balance_command))
-    
-    dispatcher.add_handler(CallbackQueryHandler(button_handler))
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_utr))
-    
-    # Start polling
-    logger.info("🤖 Bot is now running...")
-    updater.start_polling()
-    updater.idle()
+    try:
+        bot.infinity_polling()
+    except Exception as e:
+        logger.error(f"Bot error: {e}")
 
 if __name__ == '__main__':
-    main()
+    start_bot()
