@@ -12,8 +12,320 @@ from database import db
 from keyboards import *
 import atexit
 import signal
+import threading
 
-# Add this at the top to prevent multiple instances
+# Configure logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# Initialize bot
+bot = telebot.TeleBot(config.BOT_TOKEN)
+
+# Store temporary data
+user_states = {}
+otp_simulation_threads = {}
+
+# Authentication functions
+def is_owner(user_id: int) -> bool:
+    return user_id == config.OWNER_ID
+
+def is_admin(user_id: int) -> bool:
+    if is_owner(user_id):
+        return True
+    if user_id in config.ADMIN_IDS:
+        return True
+    user = db.get_user(user_id)
+    return user and user[6]
+
+# ========== OTP SIMULATION SYSTEM ==========
+def simulate_otp_delivery(order_id: int, phone_number: str, user_id: int):
+    """Simulate OTP delivery in background"""
+    try:
+        # Wait 10-30 seconds to simulate real OTP delivery
+        delay = random.randint(10, 30)
+        logger.info(f"Simulating OTP delivery for order {order_id}, delay: {delay}s")
+        time.sleep(delay)
+        
+        # Generate random OTP
+        otp_code = str(random.randint(100000, 999999))
+        
+        # Update database with OTP
+        db.update_otp_code(order_id, otp_code)
+        
+        # Notify user that OTP is ready
+        try:
+            notification_text = f"""
+🔔 *OTP Ready!*
+
+📞 Phone Number: `{phone_number}`
+⏰ OTP has arrived and is ready to view.
+
+Click 'View OTP' button to see your OTP code.
+            """
+            bot.send_message(user_id, notification_text, parse_mode='Markdown')
+        except Exception as e:
+            logger.error(f"Failed to send OTP notification to user {user_id}: {e}")
+            
+    except Exception as e:
+        logger.error(f"Error in OTP simulation for order {order_id}: {e}")
+    finally:
+        # Clean up thread tracking
+        if order_id in otp_simulation_threads:
+            del otp_simulation_threads[order_id]
+
+# ========== UPDATED PURCHASE SYSTEM ==========
+def handle_purchase(call, data, user_id):
+    user = db.get_user(user_id)
+    
+    if user and user[5]:
+        bot.answer_callback_query(call.id, "❌ Account blocked!")
+        return
+    
+    prices = {
+        "buy_telegram_otp": config.TELEGRAM_OTP_PRICE,
+        "buy_whatsapp_otp": config.WHATSAPP_OTP_PRICE,
+        "buy_telegram_session": config.SESSION_PRICE,
+        "buy_whatsapp_session": config.SESSION_PRICE
+    }
+    
+    price = prices.get(data, 0)
+    account_type = "telegram" if "telegram" in data else "whatsapp"
+    
+    if user[2] < price:
+        bot.answer_callback_query(call.id, f"❌ Need ₹{price}")
+        return
+    
+    # Get available phone number
+    phone_number = db.get_available_phone_number(account_type)
+    if not phone_number:
+        bot.answer_callback_query(call.id, "❌ No accounts available!")
+        return
+    
+    # Deduct balance
+    db.update_balance(user_id, -price)
+    
+    # Create OTP purchase order
+    order_id = db.create_otp_purchase(user_id, account_type, phone_number, price)
+    
+    # Show purchase confirmation with OTP buttons
+    purchase_text = f"""
+✅ *Purchase Successful!*
+
+📞 Phone Number: `{phone_number}`
+💰 Amount Paid: ₹{price}
+🆔 Order ID: `{order_id}`
+
+⏳ *OTP Status:* Waiting for OTP...
+This may take 10-30 seconds.
+
+Use the buttons below to manage your purchase:
+    """
+    
+    bot.edit_message_text(
+        purchase_text,
+        call.message.chat.id, call.message.message_id,
+        parse_mode='Markdown',
+        reply_markup=otp_actions_menu(order_id)
+    )
+    
+    # Start OTP simulation in background
+    otp_thread = threading.Thread(
+        target=simulate_otp_delivery, 
+        args=(order_id, phone_number, user_id),
+        daemon=True
+    )
+    otp_thread.start()
+    
+    # Track the thread
+    otp_simulation_threads[order_id] = otp_thread
+
+# ========== OTP VIEWING & CANCELLATION ==========
+def view_otp(call):
+    """Show OTP to user"""
+    order_id = int(call.data.split('_')[-1])
+    order = db.get_order(order_id)
+    
+    if not order:
+        bot.answer_callback_query(call.id, "❌ Order not found!")
+        return
+    
+    order_id, user_id, account_type, phone_number, otp_code, status, price, purchased_at, completed_at, refund = order
+    
+    if status == 'otp_ready' and otp_code:
+        # Show OTP to user
+        otp_text = f"""
+🔑 *Your OTP Code*
+
+📞 Phone Number: `{phone_number}`
+🔑 OTP Code: `{otp_code}`
+💰 Amount Paid: ₹{price}
+
+💡 *Instructions:*
+1. Open Telegram/WhatsApp
+2. Enter phone number: `{phone_number}`
+3. Enter OTP code: `{otp_code}`
+4. Complete verification
+
+✅ Account will be marked as sold after successful login.
+        """
+        
+        bot.edit_message_text(
+            otp_text,
+            call.message.chat.id, call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=otp_received_menu(order_id)
+        )
+        
+        # Mark order as completed
+        db.complete_otp_order(order_id)
+        db.mark_phone_sold(phone_number, user_id)
+        
+    elif status == 'pending':
+        # OTP not arrived yet
+        bot.answer_callback_query(
+            call.id, 
+            "⏳ OTP not arrived yet. Please wait...", 
+            show_alert=True
+        )
+    else:
+        bot.answer_callback_query(call.id, "❌ No OTP available!")
+
+def cancel_otp_purchase(call):
+    """Cancel OTP purchase and refund"""
+    order_id = int(call.data.split('_')[-1])
+    order = db.get_order(order_id)
+    
+    if not order:
+        bot.answer_callback_query(call.id, "❌ Order not found!")
+        return
+    
+    order_id, user_id, account_type, phone_number, otp_code, status, price, purchased_at, completed_at, refund = order
+    
+    if status == 'otp_ready':
+        # OTP already arrived, cannot cancel
+        bot.answer_callback_query(
+            call.id, 
+            "❌ Cannot cancel! OTP has already arrived.", 
+            show_alert=True
+        )
+        return
+    
+    if status == 'completed':
+        bot.answer_callback_query(
+            call.id, 
+            "❌ Cannot cancel! Order already completed.", 
+            show_alert=True
+        )
+        return
+    
+    # Process cancellation and refund
+    refund_order = db.cancel_otp_order(order_id)
+    
+    if refund_order:
+        # Release phone number back to pool
+        db.release_phone_number(phone_number)
+        
+        cancel_text = f"""
+❌ *Purchase Cancelled*
+
+📞 Phone Number: `{phone_number}`
+💰 Refund Amount: ₹{price}
+✅ Amount refunded to your wallet.
+
+You can try purchasing another account.
+        """
+        
+        bot.edit_message_text(
+            cancel_text,
+            call.message.chat.id, call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=back_to_main()
+        )
+        
+        # Notify user about refund
+        try:
+            refund_msg = f"💰 Refund of ₹{price} has been added to your balance."
+            bot.send_message(user_id, refund_msg, parse_mode='Markdown')
+        except Exception as e:
+            logger.error(f"Failed to send refund notification: {e}")
+    else:
+        bot.answer_callback_query(call.id, "❌ Failed to cancel order!")
+
+# ========== UPDATED BUTTON HANDLER ==========
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback(call):
+    user_id = call.from_user.id
+    data = call.data
+    
+    try:
+        # ... (keep all existing button handlers) ...
+        
+        # OTP viewing and cancellation
+        elif data.startswith("view_otp_"):
+            view_otp(call)
+        elif data.startswith("cancel_otp_"):
+            cancel_otp_purchase(call)
+        elif data.startswith("confirm_otp_"):
+            confirm_otp_received(call)
+                
+    except Exception as e:
+        logger.error(f"Error in button handler: {e}")
+        bot.answer_callback_query(call.id, "❌ Error occurred!")
+
+def confirm_otp_received(call):
+    """Confirm OTP received and mark as completed"""
+    order_id = int(call.data.split('_')[-1])
+    order = db.get_order(order_id)
+    
+    if order:
+        bot.answer_callback_query(call.id, "✅ OTP confirmed! Thank you.")
+        bot.edit_message_text(
+            "✅ *OTP Confirmed*\n\nThank you for confirming! Your account is now active.",
+            call.message.chat.id, call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=back_to_main()
+        )
+
+# ========== UPDATED ORDER HISTORY ==========
+def view_user_orders(call, user_id):
+    orders = db.get_user_orders(user_id)
+    active_orders = db.get_user_active_orders(user_id)
+    
+    if not orders and not active_orders:
+        bot.edit_message_text("📭 No orders yet!", call.message.chat.id, call.message.message_id,
+                             reply_markup=back_to_main())
+        return
+    
+    orders_text = "📋 *Your Orders*\n\n"
+    
+    # Show active orders first
+    if active_orders:
+        orders_text += "🟡 *Active Orders:*\n"
+        for order in active_orders[:3]:
+            order_id, user_id, account_type, phone_number, otp_code, status, price, purchased_at, completed_at, refund = order
+            status_emoji = {'pending': '⏳', 'otp_ready': '🔔'}.get(status, '❓')
+            orders_text += f"{status_emoji} {account_type} - ₹{price} - {status}\n"
+        orders_text += "\n"
+    
+    # Show completed orders
+    if orders:
+        orders_text += "✅ *Completed Orders:*\n"
+        for order in orders[:5]:
+            order_id, user_id, account_type, phone_number, otp_code, status, price, purchased_at, completed_at, refund = order
+            if status in ['completed', 'cancelled']:
+                status_emoji = '✅' if status == 'completed' else '❌'
+                refund_text = f" (Refund: ₹{refund})" if refund > 0 else ""
+                orders_text += f"{status_emoji} {account_type} - ₹{price}{refund_text}\n"
+    
+    bot.edit_message_text(orders_text, call.message.chat.id, call.message.message_id,
+                         reply_markup=back_to_main(), parse_mode='Markdown')
+
+# ... (rest of your existing bot.py code remains the same) ...
+
+#
 
 def exit_handler():
     print("🤖 Bot shutting down...")
@@ -878,4 +1190,5 @@ def start_bot():
 
 if __name__ == '__main__':
     start_bot()
+
 
