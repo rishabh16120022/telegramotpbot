@@ -2,6 +2,62 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import config
 from database import db
 
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+import config
+from database import db
+
+
+# ========== OTP ACTIONS MENUS ==========
+def otp_actions_menu(order_id):
+    """Menu for OTP purchase actions"""
+    keyboard = [
+        [
+            InlineKeyboardButton("👀 View OTP", callback_data=f"view_otp_{order_id}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_otp_{order_id}")
+        ],
+        [InlineKeyboardButton("🔄 Refresh Status", callback_data=f"refresh_otp_{order_id}")],
+        [InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def otp_received_menu(order_id):
+    """Menu after OTP is received"""
+    keyboard = [
+        [InlineKeyboardButton("✅ Confirm OTP Received", callback_data=f"confirm_otp_{order_id}")],
+        [InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def otp_pending_menu(order_id):
+    """Menu when OTP is still pending"""
+    keyboard = [
+        [InlineKeyboardButton("⏳ OTP Pending...", callback_data="none")],
+        [
+            InlineKeyboardButton("👀 View OTP", callback_data=f"view_otp_{order_id}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_otp_{order_id}")
+        ],
+        [InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# ========== BUY MENUS ==========
+def buy_otp_menu():
+    keyboard = [
+        [InlineKeyboardButton("📲 Telegram OTP", callback_data="buy_telegram_otp")],
+        [InlineKeyboardButton("💚 WhatsApp OTP", callback_data="buy_whatsapp_otp")],
+        [InlineKeyboardButton("🔙 Back", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def buy_session_menu():
+    keyboard = [
+        [InlineKeyboardButton("📲 Telegram Session", callback_data="buy_telegram_session")],
+        [InlineKeyboardButton("💚 WhatsApp Session", callback_data="buy_whatsapp_session")],
+        [InlineKeyboardButton("🔙 Back", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# ... (rest of your existing keyboard functions remain the same) ...
 # ========== MAIN MENUS ==========
 def main_menu():
     keyboard = [
@@ -147,3 +203,37 @@ def payment_actions_menu(payment_id):
         [InlineKeyboardButton("🔙 Back to Payments", callback_data="pending_payments")]
     ]
     return InlineKeyboardMarkup(keyboard)
+
+# ========== OTP ACTIONS MENUS ==========
+def otp_actions_menu(order_id):
+    """Menu for OTP purchase actions"""
+    keyboard = [
+        [
+            InlineKeyboardButton("👀 View OTP", callback_data=f"view_otp_{order_id}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_otp_{order_id}")
+        ],
+        [InlineKeyboardButton("🔄 Refresh Status", callback_data=f"refresh_otp_{order_id}")],
+        [InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def otp_received_menu(order_id):
+    """Menu after OTP is received"""
+    keyboard = [
+        [InlineKeyboardButton("✅ Confirm OTP Received", callback_data=f"confirm_otp_{order_id}")],
+        [InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def otp_pending_menu(order_id):
+    """Menu when OTP is still pending"""
+    keyboard = [
+        [InlineKeyboardButton("⏳ OTP Pending...", callback_data="none")],
+        [
+            InlineKeyboardButton("👀 View OTP", callback_data=f"view_otp_{order_id}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_otp_{order_id}")
+        ],
+        [InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
