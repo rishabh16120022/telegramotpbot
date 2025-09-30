@@ -42,39 +42,6 @@ def owner_panel():
         [InlineKeyboardButton("👥 Manage Users", callback_data="manage_users")],
         [InlineKeyboardButton("🛡️ Manage Admins", callback_data="manage_admins")],
         [InlineKeyboardButton("📢 Broadcast", callback_data="broadcast")],
-        [InlineKeyboardButton("📱 Manage Accounts", callback_data="owner_account_management")],
         [InlineKeyboardButton("🔙 Back", callback_data="main_menu")]
     ]
-    return InlineKeyboardMarkup(keyboard)
-
-def owner_account_management():
-    keyboard = [
-        [InlineKeyboardButton("➕ Add Telegram", callback_data="add_telegram_accounts")],
-        [InlineKeyboardButton("➕ Add WhatsApp", callback_data="add_whatsapp_accounts")],
-        [InlineKeyboardButton("📋 View Accounts", callback_data="view_all_accounts")],
-        [InlineKeyboardButton("🔙 Back", callback_data="owner_panel")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-def manage_admins_menu():
-    keyboard = [
-        [InlineKeyboardButton("👥 Add Admin", callback_data="add_admin")],
-        [InlineKeyboardButton("🗑️ Remove Admin", callback_data="remove_admin")],
-        [InlineKeyboardButton("📋 List Admins", callback_data="list_admins")],
-        [InlineKeyboardButton("🔙 Back", callback_data="owner_panel")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-def manage_users_menu():
-    keyboard = [
-        [InlineKeyboardButton("📋 All Users", callback_data="list_all_users")],
-        [InlineKeyboardButton("🔙 Back", callback_data="owner_panel")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-def admin_list_menu(admins):
-    keyboard = []
-    for admin in admins:
-        keyboard.append([InlineKeyboardButton(f"👤 {admin[1] or f'User {admin[0]}'}", callback_data=f"view_admin_{admin[0]}")])
-    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="manage_admins")])
     return InlineKeyboardMarkup(keyboard)
