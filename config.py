@@ -11,7 +11,7 @@ ADMIN_IDS = list(map(int, os.getenv('ADMIN_IDS', '').split(','))) if os.getenv('
 
 # Payment Configuration
 MIN_DEPOSIT = int(os.getenv('MIN_DEPOSIT', 50))
-OWNER_QR_CODE = os.getenv('OWNER_QR_CODE', "https://example.com/owner_qr.jpg")
+OWNER_QR_CODE = os.getenv('OWNER_QR_CODE', "https://via.placeholder.com/200x200/0088cc/ffffff?text=QR+Code")
 
 # Account Prices
 TELEGRAM_OTP_PRICE = int(os.getenv('TELEGRAM_OTP_PRICE', 10))
@@ -23,11 +23,9 @@ DB_NAME = os.getenv('DB_NAME', 'accounts_bot.db')
 DB_PATH = DB_NAME
 
 def init_database():
-    """Initialize database with proper path"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Users table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -42,7 +40,6 @@ def init_database():
         )
     ''')
     
-    # Accounts table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS accounts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,7 +52,6 @@ def init_database():
         )
     ''')
     
-    # Account orders table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS account_orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,7 +67,6 @@ def init_database():
         )
     ''')
     
-    # Payments table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS payments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,7 +79,6 @@ def init_database():
         )
     ''')
     
-    # Insert owner if not exists
     if OWNER_ID:
         cursor.execute('INSERT OR IGNORE INTO users (user_id, username, is_admin) VALUES (?, ?, ?)', 
                       (OWNER_ID, "Owner", True))
@@ -92,5 +86,4 @@ def init_database():
     conn.commit()
     conn.close()
 
-# Initialize database on import
 init_database()
