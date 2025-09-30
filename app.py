@@ -16,6 +16,7 @@ def home():
         <body>
             <h1>🤖 Telegram OTP Bot</h1>
             <p><strong>Status:</strong> ✅ Live on Render</p>
+            <p><strong>Features:</strong> Payment Approval, User Management, Admin Controls</p>
             <p><a href="/health">Health Check</a></p>
         </body>
     </html>
