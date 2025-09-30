@@ -40,9 +40,91 @@ def deposit_menu():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# ========== OWNER & ADMIN PANELS ==========
+def owner_panel():
+    keyboard = [
+        [InlineKeyboardButton("⏳ Pending Payments", callback_data="pending_payments")],
+        [InlineKeyboardButton("👥 Manage Users", callback_data="manage_users")],
+        [InlineKeyboardButton("🛡️ Manage Admins", callback_data="manage_admins")],
+        [InlineKeyboardButton("📢 Broadcast", callback_data="broadcast")],
+        [InlineKeyboardButton("📱 Manage Accounts", callback_data="owner_account_management")],
+        [InlineKeyboardButton("🔙 Back to Main", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# ========== ADMIN MANAGEMENT ==========
+def manage_admins_menu():
+    keyboard = [
+        [InlineKeyboardButton("👥 Add Admin", callback_data="add_admin")],
+        [InlineKeyboardButton("📋 List Admins", callback_data="list_admins")],
+        [InlineKeyboardButton("🔙 Back", callback_data="owner_panel")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def admin_list_menu(admins):
+    keyboard = []
+    for admin in admins:
+        user_id, username, is_admin = admin
+        status = "👑 Owner" if user_id == config.OWNER_ID else "🛡️ Admin"
+        name = f"@{username}" if username else f"User {user_id}"
+        
+        if user_id != config.OWNER_ID:  # Don't show remove button for owner
+            keyboard.append([InlineKeyboardButton(f"{name} - {status}", callback_data=f"remove_admin_{user_id}")])
+        else:
+            keyboard.append([InlineKeyboardButton(f"{name} - {status}", callback_data="none")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="manage_admins")])
+    return InlineKeyboardMarkup(keyboard)
+
+# ========== ACCOUNT MANAGEMENT ==========
+def owner_account_management():
+    keyboard = [
+        [InlineKeyboardButton("➕ Add Telegram Accounts", callback_data="add_telegram_accounts")],
+        [InlineKeyboardButton("➕ Add WhatsApp Accounts", callback_data="add_whatsapp_accounts")],
+        [InlineKeyboardButton("📋 View All Accounts", callback_data="view_all_accounts")],
+        [InlineKeyboardButton("🔙 Back", callback_data="owner_panel")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# ========== USER MANAGEMENT ==========
+def manage_users_menu():
+    keyboard = [
+        [InlineKeyboardButton("📋 All Users", callback_data="list_all_users")],
+        [InlineKeyboardButton("🔙 Back", callback_data="owner_panel")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def all_users_menu(users):
+    keyboard = []
+    for user in users[:15]:  # Show first 15 users
+        user_id, username, balance, is_blocked, is_admin, joined_date = user
+        name = f"@{username}" if username else f"User {user_id}"
+        status = "🚫" if is_blocked else "✅"
+        keyboard.append([InlineKeyboardButton(f"{status} {name} - ₹{balance}", callback_data=f"view_user_{user_id}")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="manage_users")])
+    return InlineKeyboardMarkup(keyboard)
+
+def user_actions_menu(user_id):
+    keyboard = [
+        [
+            InlineKeyboardButton("➕ ₹100", callback_data=f"add_balance_{user_id}_100"),
+            InlineKeyboardButton("➕ ₹500", callback_data=f"add_balance_{user_id}_500")
+        ],
+        [
+            InlineKeyboardButton("➕ ₹1000", callback_data=f"add_balance_{user_id}_1000"),
+            InlineKeyboardButton("➖ ₹100", callback_data=f"deduct_balance_{user_id}_100")
+        ],
+        [
+            InlineKeyboardButton("🚫 Block", callback_data=f"block_user_{user_id}"),
+            InlineKeyboardButton("✅ Unblock", callback_data=f"unblock_user_{user_id}")
+        ],
+        [InlineKeyboardButton("🔙 Back to Users", callback_data="list_all_users")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 # ========== PAYMENT APPROVAL SYSTEM ==========
 def pending_payments_menu(payments):
-    """Keyboard for pending payments list"""
     keyboard = []
     
     for payment in payments[:10]:
@@ -57,24 +139,11 @@ def pending_payments_menu(payments):
     return InlineKeyboardMarkup(keyboard)
 
 def payment_actions_menu(payment_id):
-    """Keyboard for payment approval/decline"""
     keyboard = [
         [
             InlineKeyboardButton("✅ Approve Payment", callback_data=f"approve_payment_{payment_id}"),
             InlineKeyboardButton("❌ Decline Payment", callback_data=f"decline_payment_{payment_id}")
         ],
         [InlineKeyboardButton("🔙 Back to Payments", callback_data="pending_payments")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-# ========== OWNER & ADMIN PANELS ==========
-def owner_panel():
-    keyboard = [
-        [InlineKeyboardButton("⏳ Pending Payments", callback_data="pending_payments")],
-        [InlineKeyboardButton("👥 Manage Users", callback_data="manage_users")],
-        [InlineKeyboardButton("🛡️ Manage Admins", callback_data="manage_admins")],
-        [InlineKeyboardButton("📢 Broadcast", callback_data="broadcast")],
-        [InlineKeyboardButton("📱 Manage Accounts", callback_data="owner_account_management")],
-        [InlineKeyboardButton("🔙 Back to Main", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(keyboard)
