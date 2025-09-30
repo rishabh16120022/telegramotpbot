@@ -1,4 +1,4 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def main_menu():
     keyboard = [
@@ -42,6 +42,7 @@ def owner_panel():
         [InlineKeyboardButton("👥 Manage Users", callback_data="manage_users")],
         [InlineKeyboardButton("🛡️ Manage Admins", callback_data="manage_admins")],
         [InlineKeyboardButton("📢 Broadcast", callback_data="broadcast")],
+        [InlineKeyboardButton("📱 Manage Accounts", callback_data="owner_account_management")],
         [InlineKeyboardButton("🔙 Back", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(keyboard)
